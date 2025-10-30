@@ -1,347 +1,517 @@
-<!doctype html>
-<html lang="es">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Crunchyroll Pro Checker (single-file)</title>
+import React, { useState, useEffect } from 'react';
+import { Check, X, Loader2, AlertTriangle, Download, Upload, Trash2, Play, Pause, BarChart3, Filter, Search, Eye, EyeOff, Save, Clock, Zap } from 'lucide-react';
 
-  <!-- Tailwind CDN (rápido para prototipos) -->
-  <script src="https://cdn.tailwindcss.com"></script>
+export default function AdvancedCrunchyrollChecker() {
+  const [accounts, setAccounts] = useState('');
+  const [results, setResults] = useState([]);
+  const [isChecking, setIsChecking] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [progress, setProgress] = useState(0);
+  const [checkSpeed, setCheckSpeed] = useState(2000);
+  const [filter, setFilter] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showPasswords, setShowPasswords] = useState(false);
+  const [stats, setStats] = useState({
+    total: 0,
+    valid: 0,
+    invalid: 0,
+    premium: 0,
+    free: 0,
+    checking: 0,
+    avgTime: 0
+  });
+  const [startTime, setStartTime] = useState(null);
+  const [logs, setLogs] = useState([]);
 
-  <!-- React + ReactDOM UMD -->
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  const addLog = (message, type = 'info') => {
+    const timestamp = new Date().toLocaleTimeString();
+    setLogs(prev => [...prev, { timestamp, message, type }].slice(-100));
+  };
 
-  <!-- Babel para transpilar JSX en el navegador (útil para un solo archivo) -->
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  const checkAccount = async (email, password) => {
+    const start = Date.now();
+    
+    // Simulación avanzada con diferentes escenarios
+    await new Promise(resolve => setTimeout(resolve, checkSpeed + Math.random() * 500));
+    
+    const scenarios = [
+      { valid: true, premium: true, plan: 'Mega Fan', expires: '2025-12-31' },
+      { valid: true, premium: true, plan: 'Ultimate Fan', expires: '2026-03-15' },
+      { valid: true, premium: false, plan: 'Fan', expires: null },
+      { valid: false, error: 'Credenciales inválidas' },
+      { valid: false, error: 'Cuenta suspendida' },
+      { valid: false, error: 'Email no verificado' }
+    ];
+    
+    const result = scenarios[Math.floor(Math.random() * scenarios.length)];
+    const elapsed = Date.now() - start;
+    
+    return {
+      email,
+      password,
+      ...result,
+      checkTime: elapsed,
+      timestamp: new Date().toISOString()
+    };
+  };
 
-  <style>
-    /* Ajuste pequeño para fuentes monoespaciadas en el textarea */
-    body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; }
-  </style>
-</head>
-<body class="bg-slate-900 text-white">
+  const handleCheck = async () => {
+    const lines = accounts.trim().split('\n').filter(line => line.trim());
+    const accountList = [];
+    
+    for (const line of lines) {
+      const [email, password] = line.split(':').map(s => s.trim());
+      if (email && password) {
+        accountList.push({ email, password });
+      }
+    }
 
-  <div id="root"></div>
+    if (accountList.length === 0) {
+      addLog('Error: No se encontraron cuentas válidas', 'error');
+      return;
+    }
 
-  <!-- SCRIPT: componente React en un solo archivo -->
-  <script type="text/babel">
-    const { useState, useEffect } = React;
+    setIsChecking(true);
+    setStartTime(Date.now());
+    setResults([]);
+    setCurrentIndex(0);
+    addLog(`Iniciando verificación de ${accountList.length} cuentas`, 'success');
+    
+    const newResults = [];
+    const times = [];
+    
+    for (let i = 0; i < accountList.length; i++) {
+      if (isPaused) {
+        while (isPaused) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
 
-    /* Iconos pequeños como componentes SVG (para reemplazar lucide) */
-    const IconZap = ({ size = 24 }) => (
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z" fill="currentColor" />
-      </svg>
-    );
-    const IconLoader = ({ size=18 }) => (
-      <svg className="animate-spin" width={size} height={size} viewBox="0 0 24 24" fill="none">
-        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" strokeOpacity="0.2"/>
-        <path d="M22 12a10 10 0 00-10-10" stroke="currentColor" strokeWidth="4" strokeLinecap="round"/>
-      </svg>
-    );
-    const IconCheck = ({ size=20 }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>);
-    const IconX = ({ size=20 }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>);
-    const IconDownload = ({size=16}) => (<svg width={size} height={size} viewBox="0 0 24 24"><path d="M12 3v12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><path d="M8 11l4 4 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M21 21H3" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>);
-    const IconUpload = ({size=16}) => (<svg width={size} height={size} viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M17 8l-5-5-5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M12 3v14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>);
-    const IconTrash = ({size=16}) => (<svg width={size} height={size} viewBox="0 0 24 24"><path d="M3 6h18" stroke="currentColor" strokeWidth="2"/><path d="M8 6v14a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M10 11v6M14 11v6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>);
-    const IconEye = ({size=16}) => (<svg width={size} height={size} viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" stroke="currentColor" strokeWidth="2" fill="none"/><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" fill="none"/></svg>);
-    const IconEyeOff = ({size=16}) => (<svg width={size} height={size} viewBox="0 0 24 24"><path d="M3 3l18 18" stroke="currentColor" strokeWidth="2"/><path d="M10.58 10.58A2 2 0 0113.42 13.42" stroke="currentColor" strokeWidth="2"/></svg>);
-    const IconBar = ({size=20}) => (<svg width={size} height={size} viewBox="0 0 24 24"><rect x="3" y="10" width="3" height="11"/><rect x="9" y="6" width="3" height="15"/><rect x="15" y="3" width="3" height="18"/></svg>);
-    const IconClock = ({size=18}) => (<svg width={size} height={size} viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" fill="none"/><path d="M12 7v6l4 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>);
-    const IconAlert = ({size=18}) => (<svg width={size} height={size} viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.73 3h16.9A2 2 0 0 0 22.18 18L13.71 3.86a2 2 0 0 0-3.42 0z" stroke="currentColor" strokeWidth="1" fill="none"/><path d="M12 9v4M12 17h.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>);
-
-    function AdvancedCrunchyrollChecker() {
-      const [accounts, setAccounts] = useState('');
-      const [results, setResults] = useState([]);
-      const [isChecking, setIsChecking] = useState(false);
-      const [isPaused, setIsPaused] = useState(false);
-      const [currentIndex, setCurrentIndex] = useState(0);
-      const [progress, setProgress] = useState(0);
-      const [checkSpeed, setCheckSpeed] = useState(2000);
-      const [filter, setFilter] = useState('all');
-      const [searchTerm, setSearchTerm] = useState('');
-      const [showPasswords, setShowPasswords] = useState(false);
-      const [stats, setStats] = useState({
-        total: 0, valid: 0, invalid: 0, premium: 0, free: 0, checking: 0, avgTime: 0
+      setCurrentIndex(i + 1);
+      setProgress(((i + 1) / accountList.length) * 100);
+      
+      const account = accountList[i];
+      addLog(`Verificando: ${account.email}`, 'info');
+      
+      const result = await checkAccount(account.email, account.password);
+      times.push(result.checkTime);
+      newResults.push(result);
+      setResults([...newResults]);
+      
+      const status = result.valid 
+        ? `✓ ${result.premium ? 'PREMIUM' : 'FREE'}` 
+        : `✗ ${result.error}`;
+      addLog(`${account.email} - ${status}`, result.valid ? 'success' : 'error');
+      
+      // Actualizar estadísticas
+      setStats({
+        total: newResults.length,
+        valid: newResults.filter(r => r.valid).length,
+        invalid: newResults.filter(r => !r.valid).length,
+        premium: newResults.filter(r => r.premium).length,
+        free: newResults.filter(r => r.valid && !r.premium).length,
+        checking: accountList.length - newResults.length,
+        avgTime: times.reduce((a, b) => a + b, 0) / times.length
       });
-      const [startTime, setStartTime] = useState(null);
-      const [logs, setLogs] = useState([]);
+    }
+    
+    setIsChecking(false);
+    setProgress(100);
+    const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
+    addLog(`Verificación completada en ${totalTime}s`, 'success');
+  };
 
-      const addLog = (message, type = 'info') => {
-        const timestamp = new Date().toLocaleTimeString();
-        setLogs(prev => [...prev, { timestamp, message, type }].slice(-100));
-      };
+  const filteredResults = results.filter(r => {
+    if (filter === 'valid') return r.valid;
+    if (filter === 'invalid') return !r.valid;
+    if (filter === 'premium') return r.premium;
+    if (filter === 'free') return r.valid && !r.premium;
+    return true;
+  }).filter(r => 
+    r.email.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
-      const checkAccount = async (email, password) => {
-        const start = Date.now();
-        await new Promise(resolve => setTimeout(resolve, checkSpeed + Math.random() * 500));
-        const scenarios = [
-          { valid: true, premium: true, plan: 'Mega Fan', expires: '2025-12-31' },
-          { valid: true, premium: true, plan: 'Ultimate Fan', expires: '2026-03-15' },
-          { valid: true, premium: false, plan: 'Fan', expires: null },
-          { valid: false, error: 'Credenciales inválidas' },
-          { valid: false, error: 'Cuenta suspendida' },
-          { valid: false, error: 'Email no verificado' }
-        ];
-        const result = scenarios[Math.floor(Math.random() * scenarios.length)];
-        const elapsed = Date.now() - start;
-        return { email, password, ...result, checkTime: elapsed, timestamp: new Date().toISOString() };
-      };
+  const exportResults = (type) => {
+    let content = '';
+    const dataToExport = filteredResults;
+    
+    if (type === 'txt') {
+      content = dataToExport
+        .filter(r => r.valid)
+        .map(r => `${r.email}:${r.password} | ${r.premium ? 'PREMIUM' : 'FREE'} | ${r.plan || 'N/A'}`)
+        .join('\n');
+    } else if (type === 'csv') {
+      content = 'Email,Password,Valid,Premium,Plan,Expires,CheckTime\n' +
+        dataToExport.map(r => 
+          `${r.email},${r.password},${r.valid},${r.premium || false},${r.plan || 'N/A'},${r.expires || 'N/A'},${r.checkTime}ms`
+        ).join('\n');
+    } else if (type === 'json') {
+      content = JSON.stringify(dataToExport, null, 2);
+    }
+    
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `crunchyroll_results_${Date.now()}.${type}`;
+    a.click();
+    addLog(`Resultados exportados como ${type.toUpperCase()}`, 'success');
+  };
 
-      const handleCheck = async () => {
-        const lines = accounts.trim().split('\n').filter(line => line.trim());
-        const accountList = [];
-        for (const line of lines) {
-          const [email, password] = line.split(':').map(s => s.trim());
-          if (email && password) accountList.push({ email, password });
-        }
-        if (accountList.length === 0) {
-          addLog('Error: No se encontraron cuentas válidas', 'error');
-          return;
-        }
-        setIsChecking(true);
-        setStartTime(Date.now());
-        setResults([]);
-        setCurrentIndex(0);
-        addLog(`Iniciando verificación de ${accountList.length} cuentas`, 'success');
-        const newResults = [];
-        const times = [];
-        for (let i = 0; i < accountList.length; i++) {
-          // pausa manual
-          while (isPaused) { await new Promise(r => setTimeout(r, 100)); }
-          setCurrentIndex(i + 1);
-          setProgress(((i + 1) / accountList.length) * 100);
-          const account = accountList[i];
-          addLog(`Verificando: ${account.email}`, 'info');
-          const result = await checkAccount(account.email, account.password);
-          times.push(result.checkTime);
-          newResults.push(result);
-          setResults([...newResults]);
-          const status = result.valid ? `✓ ${result.premium ? 'PREMIUM' : 'FREE'}` : `✗ ${result.error}`;
-          addLog(`${account.email} - ${status}`, result.valid ? 'success' : 'error');
-          setStats({
-            total: newResults.length,
-            valid: newResults.filter(r => r.valid).length,
-            invalid: newResults.filter(r => !r.valid).length,
-            premium: newResults.filter(r => r.premium).length,
-            free: newResults.filter(r => r.valid && !r.premium).length,
-            checking: accountList.length - newResults.length,
-            avgTime: times.reduce((a,b) => a + b, 0) / times.length
-          });
-        }
-        setIsChecking(false);
-        setProgress(100);
-        const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
-        addLog(`Verificación completada en ${totalTime}s`, 'success');
-      };
+  const importFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setAccounts(event.target.result);
+      const lines = event.target.result.split('\n').filter(l => l.trim()).length;
+      addLog(`${lines} cuentas importadas desde ${file.name}`, 'success');
+    };
+    reader.readAsText(file);
+  };
 
-      const filteredResults = results.filter(r => {
-        if (filter === 'valid') return r.valid;
-        if (filter === 'invalid') return !r.valid;
-        if (filter === 'premium') return r.premium;
-        if (filter === 'free') return r.valid && !r.premium;
-        return true;
-      }).filter(r => r.email.toLowerCase().includes(searchTerm.toLowerCase()));
-
-      const exportResults = (type) => {
-        let content = '';
-        const dataToExport = filteredResults;
-        if (type === 'txt') {
-          content = dataToExport.filter(r => r.valid).map(r => \`\${r.email}:\${r.password} | \${r.premium ? 'PREMIUM' : 'FREE'} | \${r.plan || 'N/A'}\`).join('\\n');
-        } else if (type === 'csv') {
-          content = 'Email,Password,Valid,Premium,Plan,Expires,CheckTime\\n' +
-            dataToExport.map(r => \`\${r.email},\${r.password},\${r.valid},\${r.premium||false},\${r.plan||'N/A'},\${r.expires||'N/A'},\${r.checkTime}ms\`).join('\\n');
-        } else if (type === 'json') content = JSON.stringify(dataToExport, null, 2);
-        const blob = new Blob([content], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = \`crunchyroll_results_\${Date.now()}.\${type}\`;
-        a.click();
-        addLog(\`Resultados exportados como \${type.toUpperCase()}\`, 'success');
-      };
-
-      const importFile = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          setAccounts(event.target.result);
-          const lines = event.target.result.split('\\n').filter(l => l.trim()).length;
-          addLog(\`\${lines} cuentas importadas desde \${file.name}\`, 'success');
-        };
-        reader.readAsText(file);
-      };
-
-      return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-orange-900 to-slate-900 p-4">
-          <div className="max-w-7xl mx-auto">
-            <div className="bg-gradient-to-r from-orange-600 to-red-600 rounded-lg shadow-2xl p-6 mb-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-16 h-16 bg-white rounded-xl flex items-center justify-center shadow-lg">
-                    <IconZap size={32} className="text-orange-600" />
-                  </div>
-                  <div>
-                    <h1 className="text-4xl font-bold text-white">Crunchyroll Pro Checker</h1>
-                    <p className="text-orange-100">Sistema Avanzado de Verificación v3.0</p>
-                  </div>
-                </div>
-                <div className="text-right text-white">
-                  <div className="text-sm opacity-80">Velocidad de Check</div>
-                  <select value={checkSpeed} onChange={(e)=>setCheckSpeed(Number(e.target.value))} className="bg-white/20 border border-white/30 rounded px-3 py-1 text-white mt-1" disabled={isChecking}>
-                    <option value={500}>Ultra Rápido (0.5s)</option>
-                    <option value={1000}>Rápido (1s)</option>
-                    <option value={2000}>Normal (2s)</option>
-                    <option value={3000}>Seguro (3s)</option>
-                  </select>
-                </div>
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-orange-900 to-slate-900 p-4">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-orange-600 to-red-600 rounded-lg shadow-2xl p-6 mb-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 bg-white rounded-xl flex items-center justify-center shadow-lg">
+                <Zap className="text-orange-600" size={32} />
+              </div>
+              <div>
+                <h1 className="text-4xl font-bold text-white">
+                  Crunchyroll Pro Checker
+                </h1>
+                <p className="text-orange-100">Sistema Avanzado de Verificación v3.0</p>
               </div>
             </div>
+            <div className="text-right text-white">
+              <div className="text-sm opacity-80">Velocidad de Check</div>
+              <select 
+                value={checkSpeed} 
+                onChange={(e) => setCheckSpeed(Number(e.target.value))}
+                className="bg-white/20 border border-white/30 rounded px-3 py-1 text-white mt-1"
+                disabled={isChecking}
+              >
+                <option value={500}>Ultra Rápido (0.5s)</option>
+                <option value={1000}>Rápido (1s)</option>
+                <option value={2000}>Normal (2s)</option>
+                <option value={3000}>Seguro (3s)</option>
+              </select>
+            </div>
+          </div>
+        </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2 space-y-6">
-                <div className="bg-slate-800 rounded-lg shadow-2xl p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-xl font-bold text-white">Cuentas a Verificar</h2>
-                    <div className="flex gap-2">
-                      <label className="cursor-pointer">
-                        <input type="file" accept=".txt" onChange={importFile} className="hidden" />
-                        <div className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors">
-                          <IconUpload size={16} /> Importar
-                        </div>
-                      </label>
-                      <button onClick={()=>setAccounts('')} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors">
-                        <IconTrash size={16} /> Limpiar
-                      </button>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Panel de Control */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Input de Cuentas */}
+            <div className="bg-slate-800 rounded-lg shadow-2xl p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold text-white">Cuentas a Verificar</h2>
+                <div className="flex gap-2">
+                  <label className="cursor-pointer">
+                    <input type="file" accept=".txt" onChange={importFile} className="hidden" />
+                    <div className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors">
+                      <Upload size={16} />
+                      Importar
                     </div>
-                  </div>
-
-                  <textarea value={accounts} onChange={e=>setAccounts(e.target.value)} placeholder={"email@ejemplo.com:contraseña\\notro@ejemplo.com:pass123\\nFormato: email:password (una por línea)"} className="w-full h-48 px-4 py-3 bg-slate-900 border border-slate-700 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent font-mono text-sm text-white placeholder-slate-500" disabled={isChecking} />
-
-                  <div className="flex items-center justify-between mt-4">
-                    <div className="text-sm text-slate-400">
-                      {accounts.split('\\n').filter(l => l.trim() && l.includes(':')).length} cuentas cargadas
-                    </div>
-                    <div className="flex gap-2">
-                      {isChecking && (
-                        <button onClick={()=>setIsPaused(!isPaused)} className={`${isPaused ? 'bg-green-600 hover:bg-green-700' : 'bg-yellow-600 hover:bg-yellow-700'} text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors`}>
-                          {isPaused ? '▶ Reanudar' : '⏸ Pausar'}
-                        </button>
-                      )}
-                      <button onClick={handleCheck} disabled={isChecking || !accounts.trim()} className="bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 disabled:opacity-50 text-white font-semibold px-6 py-2 rounded-lg transition-all flex items-center gap-2 shadow-lg">
-                        {isChecking ? (<><IconLoader /> Verificando... ({currentIndex}/{accounts.split('\\n').filter(l=>l.trim() && l.includes(':')).length})</>) : (<><IconZap /> Iniciar Verificación</>)}
-                      </button>
-                    </div>
-                  </div>
-
+                  </label>
+                  <button 
+                    onClick={() => setAccounts('')}
+                    className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+                  >
+                    <Trash2 size={16} />
+                    Limpiar
+                  </button>
+                </div>
+              </div>
+              
+              <textarea
+                value={accounts}
+                onChange={(e) => setAccounts(e.target.value)}
+                placeholder="email@ejemplo.com:contraseña&#10;otro@ejemplo.com:pass123&#10;...&#10;&#10;Formato: email:password (una por línea)"
+                className="w-full h-48 px-4 py-3 bg-slate-900 border border-slate-700 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent font-mono text-sm text-white placeholder-slate-500"
+                disabled={isChecking}
+              />
+              
+              <div className="flex items-center justify-between mt-4">
+                <div className="text-sm text-slate-400">
+                  {accounts.split('\n').filter(l => l.trim() && l.includes(':')).length} cuentas cargadas
+                </div>
+                <div className="flex gap-2">
                   {isChecking && (
-                    <div className="mt-4">
-                      <div className="flex items-center justify-between text-sm text-slate-400 mb-2">
-                        <span>Progreso</span>
-                        <span>{progress.toFixed(1)}%</span>
-                      </div>
-                      <div className="w-full bg-slate-700 rounded-full h-3 overflow-hidden">
-                        <div className="bg-gradient-to-r from-orange-500 to-red-500 h-full transition-all duration-300 rounded-full" style={{ width: `${progress}%` }} />
-                      </div>
-                    </div>
+                    <button
+                      onClick={() => setIsPaused(!isPaused)}
+                      className={`${isPaused ? 'bg-green-600 hover:bg-green-700' : 'bg-yellow-600 hover:bg-yellow-700'} text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors`}
+                    >
+                      {isPaused ? <Play size={16} /> : <Pause size={16} />}
+                      {isPaused ? 'Reanudar' : 'Pausar'}
+                    </button>
                   )}
+                  <button
+                    onClick={handleCheck}
+                    disabled={isChecking || !accounts.trim()}
+                    className="bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 disabled:from-slate-700 disabled:to-slate-700 text-white font-semibold px-6 py-2 rounded-lg transition-all flex items-center gap-2 shadow-lg"
+                  >
+                    {isChecking ? (
+                      <>
+                        <Loader2 className="animate-spin" size={20} />
+                        Verificando... ({currentIndex}/{accounts.split('\n').filter(l => l.trim() && l.includes(':')).length})
+                      </>
+                    ) : (
+                      <>
+                        <Zap size={20} />
+                        Iniciar Verificación
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {isChecking && (
+                <div className="mt-4">
+                  <div className="flex items-center justify-between text-sm text-slate-400 mb-2">
+                    <span>Progreso</span>
+                    <span>{progress.toFixed(1)}%</span>
+                  </div>
+                  <div className="w-full bg-slate-700 rounded-full h-3 overflow-hidden">
+                    <div 
+                      className="bg-gradient-to-r from-orange-500 to-red-500 h-full transition-all duration-300 rounded-full"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Resultados */}
+            {results.length > 0 && (
+              <div className="bg-slate-800 rounded-lg shadow-2xl p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                    <BarChart3 size={24} />
+                    Resultados
+                  </h2>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setShowPasswords(!showPasswords)}
+                      className="bg-slate-700 hover:bg-slate-600 text-white px-3 py-2 rounded-lg flex items-center gap-2"
+                    >
+                      {showPasswords ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                    <button
+                      onClick={() => exportResults('txt')}
+                      className="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg flex items-center gap-2"
+                    >
+                      <Download size={16} />
+                      TXT
+                    </button>
+                    <button
+                      onClick={() => exportResults('csv')}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg flex items-center gap-2"
+                    >
+                      <Download size={16} />
+                      CSV
+                    </button>
+                    <button
+                      onClick={() => exportResults('json')}
+                      className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg flex items-center gap-2"
+                    >
+                      <Download size={16} />
+                      JSON
+                    </button>
+                  </div>
                 </div>
 
-                {results.length > 0 && (
-                  <div className="bg-slate-800 rounded-lg shadow-2xl p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <h2 className="text-xl font-bold text-white flex items-center gap-2"><IconBar /> Resultados</h2>
-                      <div className="flex gap-2">
-                        <button onClick={()=>setShowPasswords(!showPasswords)} className="bg-slate-700 hover:bg-slate-600 text-white px-3 py-2 rounded-lg flex items-center gap-2">{showPasswords ? <IconEyeOff/> : <IconEye/>}</button>
-                        <button onClick={()=>exportResults('txt')} className="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg flex items-center gap-2"><IconDownload/> TXT</button>
-                        <button onClick={()=>exportResults('csv')} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg flex items-center gap-2"><IconDownload/> CSV</button>
-                        <button onClick={()=>exportResults('json')} className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg flex items-center gap-2"><IconDownload/> JSON</button>
-                      </div>
-                    </div>
+                <div className="flex gap-2 mb-4">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-500" size={16} />
+                    <input
+                      type="text"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      placeholder="Buscar por email..."
+                      className="w-full pl-10 pr-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:ring-2 focus:ring-orange-500"
+                    />
+                  </div>
+                  <select
+                    value={filter}
+                    onChange={(e) => setFilter(e.target.value)}
+                    className="px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:ring-2 focus:ring-orange-500"
+                  >
+                    <option value="all">Todas ({results.length})</option>
+                    <option value="valid">Válidas ({stats.valid})</option>
+                    <option value="invalid">Inválidas ({stats.invalid})</option>
+                    <option value="premium">Premium ({stats.premium})</option>
+                    <option value="free">Free ({stats.free})</option>
+                  </select>
+                </div>
 
-                    <div className="flex gap-2 mb-4">
-                      <div className="relative flex-1">
-                        <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-500">🔎</div>
-                        <input value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} placeholder="Buscar por email..." className="w-full pl-10 pr-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:ring-2 focus:ring-orange-500" />
-                      </div>
-                      <select value={filter} onChange={e=>setFilter(e.target.value)} className="px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:ring-2 focus:ring-orange-500">
-                        <option value="all">Todas ({results.length})</option>
-                        <option value="valid">Válidas ({stats.valid})</option>
-                        <option value="invalid">Inválidas ({stats.invalid})</option>
-                        <option value="premium">Premium ({stats.premium})</option>
-                        <option value="free">Free ({stats.free})</option>
-                      </select>
-                    </div>
-
-                    <div className="space-y-2 max-h-96 overflow-y-auto">
-                      {filteredResults.map((result, index) => (
-                        <div key={index} className={`p-4 rounded-lg border-2 transition-all ${result.valid ? (result.premium ? 'bg-gradient-to-r from-purple-900/50 to-pink-900/50 border-purple-500/50' : 'bg-gradient-to-r from-green-900/50 to-blue-900/50 border-green-500/50') : 'bg-gradient-to-r from-red-900/50 to-orange-900/50 border-red-500/50'}`}>
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3 flex-1">
-                              <div className="flex-shrink-0">{result.valid ? <IconCheck/> : <IconX/>}</div>
-                              <div className="flex-1 min-w-0">
-                                <div className="font-mono text-sm font-medium text-white truncate">{result.email}</div>
-                                {showPasswords && <div className="font-mono text-xs text-slate-400 mt-1">Password: {result.password}</div>}
-                                {result.error && <div className="text-xs text-red-400 mt-1">{result.error}</div>}
-                                {result.plan && <div className="text-xs text-slate-400 mt-1">Plan: {result.plan} {result.expires && `• Expira: ${result.expires}`}</div>}
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {filteredResults.map((result, index) => (
+                    <div
+                      key={index}
+                      className={`p-4 rounded-lg border-2 transition-all ${
+                        result.valid
+                          ? result.premium
+                            ? 'bg-gradient-to-r from-purple-900/50 to-pink-900/50 border-purple-500/50'
+                            : 'bg-gradient-to-r from-green-900/50 to-blue-900/50 border-green-500/50'
+                          : 'bg-gradient-to-r from-red-900/50 to-orange-900/50 border-red-500/50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3 flex-1">
+                          {result.valid ? (
+                            <Check className="text-green-400 flex-shrink-0" size={24} />
+                          ) : (
+                            <X className="text-red-400 flex-shrink-0" size={24} />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="font-mono text-sm font-medium text-white truncate">
+                              {result.email}
+                            </div>
+                            {showPasswords && (
+                              <div className="font-mono text-xs text-slate-400 mt-1">
+                                Password: {result.password}
                               </div>
-                            </div>
-                            <div className="flex items-center gap-2 flex-shrink-0">
-                              {result.valid && <span className={`px-3 py-1 rounded-full text-xs font-bold ${result.premium ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white' : 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white'}`}>{result.premium ? '⭐ PREMIUM' : 'FREE'}</span>}
-                              <span className="text-xs text-slate-500">{result.checkTime}ms</span>
-                            </div>
+                            )}
+                            {result.error && (
+                              <div className="text-xs text-red-400 mt-1">{result.error}</div>
+                            )}
+                            {result.plan && (
+                              <div className="text-xs text-slate-400 mt-1">
+                                Plan: {result.plan} {result.expires && `• Expira: ${result.expires}`}
+                              </div>
+                            )}
                           </div>
                         </div>
-                      ))}
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {result.valid && (
+                            <span
+                              className={`px-3 py-1 rounded-full text-xs font-bold ${
+                                result.premium
+                                  ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white'
+                                  : 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white'
+                              }`}
+                            >
+                              {result.premium ? '⭐ PREMIUM' : 'FREE'}
+                            </span>
+                          )}
+                          <span className="text-xs text-slate-500">
+                            {result.checkTime}ms
+                          </span>
+                        </div>
+                      </div>
                     </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
 
+          {/* Panel Lateral */}
+          <div className="space-y-6">
+            {/* Estadísticas */}
+            <div className="bg-slate-800 rounded-lg shadow-2xl p-6">
+              <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                <BarChart3 size={20} />
+                Estadísticas
+              </h3>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Total</span>
+                  <span className="text-2xl font-bold text-white">{stats.total}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Válidas</span>
+                  <span className="text-2xl font-bold text-green-400">{stats.valid}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Inválidas</span>
+                  <span className="text-2xl font-bold text-red-400">{stats.invalid}</span>
+                </div>
+                <div className="border-t border-slate-700 pt-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400">Premium</span>
+                    <span className="text-xl font-bold text-purple-400">{stats.premium}</span>
+                  </div>
+                  <div className="flex justify-between items-center mt-2">
+                    <span className="text-slate-400">Free</span>
+                    <span className="text-xl font-bold text-blue-400">{stats.free}</span>
+                  </div>
+                </div>
+                {stats.avgTime > 0 && (
+                  <div className="border-t border-slate-700 pt-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-400">Tiempo Promedio</span>
+                      <span className="text-sm font-bold text-orange-400">{stats.avgTime.toFixed(0)}ms</span>
+                    </div>
+                  </div>
+                )}
+                {stats.total > 0 && (
+                  <div className="mt-4">
+                    <div className="text-xs text-slate-400 mb-2">Tasa de Éxito</div>
+                    <div className="w-full bg-slate-700 rounded-full h-2">
+                      <div 
+                        className="bg-gradient-to-r from-green-500 to-blue-500 h-full rounded-full transition-all"
+                        style={{ width: `${(stats.valid / stats.total) * 100}%` }}
+                      />
+                    </div>
+                    <div className="text-xs text-slate-400 mt-1 text-right">
+                      {((stats.valid / stats.total) * 100).toFixed(1)}%
+                    </div>
                   </div>
                 )}
               </div>
+            </div>
 
-              <div className="space-y-6">
-                <div className="bg-slate-800 rounded-lg shadow-2xl p-6">
-                  <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2"><IconBar/> Estadísticas</h3>
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center"><span className="text-slate-400">Total</span><span className="text-2xl font-bold text-white">{stats.total}</span></div>
-                    <div className="flex justify-between items-center"><span className="text-slate-400">Válidas</span><span className="text-2xl font-bold text-green-400">{stats.valid}</span></div>
-                    <div className="flex justify-between items-center"><span className="text-slate-400">Inválidas</span><span className="text-2xl font-bold text-red-400">{stats.invalid}</span></div>
-                    <div className="border-t border-slate-700 pt-3">
-                      <div className="flex justify-between items-center"><span className="text-slate-400">Premium</span><span className="text-xl font-bold text-purple-400">{stats.premium}</span></div>
-                      <div className="flex justify-between items-center mt-2"><span className="text-slate-400">Free</span><span className="text-xl font-bold text-blue-400">{stats.free}</span></div>
-                    </div>
-                    {stats.avgTime > 0 && (<div className="border-t border-slate-700 pt-3"><div className="flex justify-between items-center"><span className="text-slate-400">Tiempo Promedio</span><span className="text-sm font-bold text-orange-400">{stats.avgTime.toFixed(0)}ms</span></div></div>)}
-                    {stats.total > 0 && (<div className="mt-4"><div className="text-xs text-slate-400 mb-2">Tasa de Éxito</div><div className="w-full bg-slate-700 rounded-full h-2"><div className="bg-gradient-to-r from-green-500 to-blue-500 h-full rounded-full transition-all" style={{ width: `${(stats.valid / stats.total) * 100}%` }} /></div><div className="text-xs text-slate-400 mt-1 text-right">{((stats.valid / stats.total) * 100).toFixed(1)}%</div></div>)}
+            {/* Logs en Tiempo Real */}
+            <div className="bg-slate-800 rounded-lg shadow-2xl p-6">
+              <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                <Clock size={20} />
+                Log de Actividad
+              </h3>
+              <div className="bg-slate-900 rounded-lg p-3 h-64 overflow-y-auto font-mono text-xs">
+                {logs.length === 0 ? (
+                  <div className="text-slate-500 text-center py-8">
+                    No hay actividad aún...
                   </div>
-                </div>
-
-                <div className="bg-slate-800 rounded-lg shadow-2xl p-6">
-                  <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2"><IconClock/> Log de Actividad</h3>
-                  <div className="bg-slate-900 rounded-lg p-3 h-64 overflow-y-auto font-mono text-xs">
-                    {logs.length === 0 ? (<div className="text-slate-500 text-center py-8">No hay actividad aún...</div>) : (<div className="space-y-1">{logs.slice().reverse().map((log,i)=>(
-                      <div key={i} className="flex gap-2"><span className="text-slate-500">[{log.timestamp}]</span><span className={log.type==='success'?'text-green-400':log.type==='error'?'text-red-400':'text-slate-300'}>{log.message}</span></div>
-                    ))}</div>)}
+                ) : (
+                  <div className="space-y-1">
+                    {logs.slice().reverse().map((log, i) => (
+                      <div key={i} className="flex gap-2">
+                        <span className="text-slate-500">[{log.timestamp}]</span>
+                        <span className={
+                          log.type === 'success' ? 'text-green-400' :
+                          log.type === 'error' ? 'text-red-400' :
+                          'text-slate-300'
+                        }>
+                          {log.message}
+                        </span>
+                      </div>
+                    ))}
                   </div>
-                </div>
-
-                <div className="bg-yellow-900/30 border-l-4 border-yellow-500 p-4 rounded-lg">
-                  <div className="flex items-start gap-2">
-                    <div className="text-yellow-500 mt-1"><IconAlert/></div>
-                    <div className="text-sm text-yellow-200"><strong>Uso Responsable:</strong> Solo verifica cuentas que te pertenezcan. El acceso no autorizado es ilegal.</div>
-                  </div>
-                </div>
+                )}
               </div>
             </div>
 
+            {/* Advertencia */}
+            <div className="bg-yellow-900/30 border-l-4 border-yellow-500 p-4 rounded-lg">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="text-yellow-500 mt-1 flex-shrink-0" size={20} />
+                <div className="text-sm text-yellow-200">
+                  <strong>Uso Responsable:</strong> Solo verifica cuentas que te pertenezcan. El acceso no autorizado es ilegal.
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-      );
-    }
-
-    // Render
-    ReactDOM.createRoot(document.getElementById('root')).render(<AdvancedCrunchyrollChecker />);
-  </script>
-</body>
-</html>
+      </div>
+    </div>
+  );
+}
